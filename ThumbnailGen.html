@@ -1,0 +1,735 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PDF Thumbnail & Mockup Generator</title>
+
+  <!-- PDF.js & JSZip -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+  <style>
+    :root {
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --border: #e2e8f0;
+      --text-main: #0f172a;
+      --text-muted: #64748b;
+      --bg-page: #f8fafc;
+      --card-bg: #ffffff;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg-page);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2.5rem 1rem;
+    }
+
+    .tool-workspace {
+      width: 100%;
+      max-width: 1050px;
+      margin: 0 auto;
+    }
+
+    .card-container {
+      padding: 2rem;
+      background: var(--card-bg);
+      border-radius: 1rem;
+      border: 1px solid var(--border);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    }
+
+    /* Upload Dropzone */
+    .dropzone {
+      border: 2px dashed #cbd5e1;
+      border-radius: 0.75rem;
+      padding: 3rem 1.5rem;
+      text-align: center;
+      cursor: pointer;
+      background: #fafafa;
+      transition: all 0.2s ease;
+    }
+
+    .dropzone:hover,
+    .dropzone.dragover {
+      border-color: var(--primary);
+      background: #eff6ff;
+    }
+
+    .dropzone-icon {
+      width: 48px;
+      height: 48px;
+      stroke: var(--text-muted);
+      margin-bottom: 0.75rem;
+    }
+
+    .dropzone-title {
+      font-weight: 600;
+      font-size: 1.1rem;
+      color: var(--text-main);
+      margin-bottom: 0.25rem;
+    }
+
+    .dropzone-desc {
+      font-size: 0.875rem;
+      color: var(--text-muted);
+    }
+
+    /* Options Panel */
+    .options-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 1rem;
+      margin-top: 1.5rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--border);
+    }
+
+    .control-group label {
+      display: block;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 0.4rem;
+    }
+
+    .control-group select,
+    .control-group input[type="text"],
+    .control-group input[type="range"] {
+      width: 100%;
+      padding: 0.6rem 0.75rem;
+      border-radius: 0.5rem;
+      border: 1px solid var(--border);
+      background: #fff;
+      font-size: 0.875rem;
+      color: var(--text-main);
+      outline: none;
+    }
+
+    .control-group select:focus,
+    .control-group input[type="text"]:focus {
+      border-color: var(--primary);
+    }
+
+    .color-picker-wrap {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+      transition: opacity 0.2s ease;
+    }
+
+    .color-picker-wrap.disabled {
+      opacity: 0.4;
+      pointer-events: none;
+    }
+
+    .color-picker-wrap input[type="color"] {
+      width: 38px;
+      height: 38px;
+      padding: 0;
+      border: 1px solid var(--border);
+      border-radius: 0.4rem;
+      cursor: pointer;
+      background: none;
+    }
+
+    .color-picker-wrap input[type="text"] {
+      flex: 1;
+      font-family: monospace;
+      text-transform: uppercase;
+    }
+
+    /* Results Workspace */
+    .file-header {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+
+    .file-name {
+      font-weight: bold;
+      font-size: 1.125rem;
+      color: var(--text-main);
+    }
+
+    .file-sub {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-top: 0.25rem;
+    }
+
+    .thumbnails-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 1.25rem;
+      margin-bottom: 2rem;
+    }
+
+    .thumb-card {
+      border: 1px solid var(--border);
+      border-radius: 0.5rem;
+      overflow: hidden;
+      background: #fff;
+      display: flex;
+      flex-direction: column;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .thumb-card:hover {
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+      transform: translateY(-2px);
+    }
+
+    .thumb-card img {
+      width: 100%;
+      display: block;
+      object-fit: cover;
+    }
+
+    /* Checkerboard pattern for transparent preview */
+    .thumb-card.is-transparent img {
+      background-color: #ffffff;
+      background-image: linear-gradient(45deg, #e2e8f0 25%, transparent 25%),
+                        linear-gradient(-45deg, #e2e8f0 25%, transparent 25%),
+                        linear-gradient(45deg, transparent 75%, #e2e8f0 75%),
+                        linear-gradient(-45deg, transparent 75%, #e2e8f0 75%);
+      background-size: 16px 16px;
+      background-position: 0 0, 0 8px, 8px -8px, -8px 0px;
+    }
+
+    .thumb-footer {
+      padding: 0.5rem 0.75rem;
+      font-size: 0.8rem;
+      text-align: center;
+      background: rgb(248, 250, 252);
+      border-top: 1px solid var(--border);
+      color: var(--text-main);
+      font-weight: 500;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .thumb-download-btn {
+      color: var(--primary);
+      text-decoration: none;
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 0.2rem 0.5rem;
+      border-radius: 0.25rem;
+      background: #eff6ff;
+    }
+
+    .thumb-download-btn:hover {
+      background: #dbeafe;
+    }
+
+    /* Buttons */
+    .tool-btn-primary {
+      width: 100%;
+      padding: 1rem;
+      border-radius: 0.5rem;
+      background: var(--primary);
+      color: white;
+      border: none;
+      cursor: pointer;
+      font-weight: bold;
+      font-size: 0.95rem;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 0.5rem;
+      transition: background 0.15s ease;
+    }
+
+    .tool-btn-primary:hover {
+      background: var(--primary-hover);
+    }
+
+    .tool-btn-primary:disabled {
+      opacity: 0.65;
+      cursor: not-allowed;
+    }
+
+    .start-over-btn {
+      background: none;
+      border: none;
+      color: rgb(100, 116, 139);
+      text-decoration: underline;
+      cursor: pointer;
+      font-size: 0.875rem;
+      margin-top: 1rem;
+    }
+
+    .start-over-btn:hover {
+      color: var(--text-main);
+    }
+
+    .progress-bar {
+      height: 6px;
+      width: 100%;
+      background: #e2e8f0;
+      border-radius: 3px;
+      overflow: hidden;
+      margin-bottom: 1.5rem;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: var(--primary);
+      width: 0%;
+      transition: width 0.15s ease;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="tool-workspace">
+    <!-- View 1: Upload & Options -->
+    <div id="uploadView" class="card-container">
+      <div id="dropzone" class="dropzone">
+        <input type="file" id="fileInput" accept="application/pdf" style="display: none;" />
+        <svg class="dropzone-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+          stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round"
+            d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z" />
+        </svg>
+        <div class="dropzone-title">Click to upload or drag & drop PDF</div>
+        <div class="dropzone-desc">Generates portfolio-ready mockups matching Framer</div>
+      </div>
+
+      <div class="options-grid">
+        <!-- Canvas Aspect Ratio -->
+        <div class="control-group">
+          <label for="aspectRatio">Canvas Layout</label>
+          <select id="aspectRatio">
+            <option value="16:9" selected>Landscape 16:9 (Framer Card)</option>
+            <option value="4:3">Landscape 4:3 (Classic Card)</option>
+            <option value="1:1">Square 1:1</option>
+            <option value="original">Natural Page (No Canvas)</option>
+          </select>
+        </div>
+
+        <!-- Background Color & Transparent Toggle -->
+        <div class="control-group" id="bgGroup">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem;">
+            <label for="bgColorText" style="margin-bottom: 0;">Background</label>
+            <label style="display: flex; align-items: center; gap: 0.35rem; font-size: 0.75rem; text-transform: none; cursor: pointer; color: var(--text-main); font-weight: 500;">
+              <input type="checkbox" id="bgTransparent" style="width: auto; cursor: pointer; accent-color: var(--primary);" />
+              Transparent
+            </label>
+          </div>
+          <div class="color-picker-wrap" id="colorPickerWrap">
+            <input type="color" id="bgColorPicker" value="#FBFCFD" />
+            <input type="text" id="bgColorText" value="#FBFCFD" maxlength="7" />
+          </div>
+        </div>
+
+        <!-- Vertical Margin (Defaults to 0%) -->
+        <div class="control-group" id="marginGroup">
+          <label for="paddingPercent">Vertical Space: <span id="paddingLabel"
+              style="color: var(--primary);">0%</span></label>
+          <input type="range" id="paddingPercent" min="0" max="15" value="0" step="1"
+            style="margin-top: 0.5rem; accent-color: var(--primary);" />
+        </div>
+
+        <!-- Export Resolution Width -->
+        <div class="control-group">
+          <label for="imgWidth">Resolution Width</label>
+          <select id="imgWidth">
+            <option value="1600" selected>1600px (Framer / Retina HD)</option>
+            <option value="1920">1920px (Full HD)</option>
+            <option value="1200">1200px (Standard)</option>
+          </select>
+        </div>
+
+        <!-- Page Mode -->
+        <div class="control-group">
+          <label for="pageMode">Pages</label>
+          <select id="pageMode">
+            <option value="first" selected>First Page Only</option>
+            <option value="all">All Pages</option>
+            <option value="range">Custom Range</option>
+          </select>
+          <input type="text" id="pageRange" placeholder="e.g. 1-3, 5" class="hidden" style="margin-top: 0.5rem;" />
+        </div>
+
+        <!-- Format -->
+        <div class="control-group">
+          <label for="imgFormat">Format</label>
+          <select id="imgFormat">
+            <option value="image/png" selected>PNG (Lossless / Transparency)</option>
+            <option value="image/jpeg">JPEG (Quality 95%)</option>
+            <option value="image/webp">WebP (Optimized)</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- View 2: Generated Output Workspace -->
+    <div id="resultsView" class="hidden">
+      <div class="card-container">
+
+        <div id="progressBox" class="hidden">
+          <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem; text-align: center;"
+            id="progressLabel">
+            Rendering preview mockups...
+          </div>
+          <div class="progress-bar">
+            <div id="progressFill" class="progress-fill"></div>
+          </div>
+        </div>
+
+        <div class="file-header">
+          <p id="displayFileName" class="file-name"></p>
+          <p id="displayFileInfo" class="file-sub"></p>
+        </div>
+
+        <div id="thumbnailsGrid" class="thumbnails-grid"></div>
+
+        <button id="downloadAllBtn" class="tool-btn-primary">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" x2="12" y1="15" y2="3"></line>
+          </svg>
+          Download All Images
+        </button>
+
+        <div style="text-align: center; margin-top: 1rem;">
+          <button id="startOverBtn" class="start-over-btn">Start Over</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+    let currentPdfDoc = null;
+    let currentFileName = '';
+    let generatedThumbnails = [];
+
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('fileInput');
+    const pageMode = document.getElementById('pageMode');
+    const pageRange = document.getElementById('pageRange');
+    const imgWidth = document.getElementById('imgWidth');
+    const imgFormat = document.getElementById('imgFormat');
+    const aspectRatio = document.getElementById('aspectRatio');
+    const bgColorPicker = document.getElementById('bgColorPicker');
+    const bgColorText = document.getElementById('bgColorText');
+    const bgTransparent = document.getElementById('bgTransparent');
+    const colorPickerWrap = document.getElementById('colorPickerWrap');
+    const bgGroup = document.getElementById('bgGroup');
+    const marginGroup = document.getElementById('marginGroup');
+    const paddingPercent = document.getElementById('paddingPercent');
+    const paddingLabel = document.getElementById('paddingLabel');
+
+    const uploadView = document.getElementById('uploadView');
+    const resultsView = document.getElementById('resultsView');
+    const displayFileName = document.getElementById('displayFileName');
+    const displayFileInfo = document.getElementById('displayFileInfo');
+    const thumbnailsGrid = document.getElementById('thumbnailsGrid');
+    const downloadAllBtn = document.getElementById('downloadAllBtn');
+    const startOverBtn = document.getElementById('startOverBtn');
+    const progressBox = document.getElementById('progressBox');
+    const progressFill = document.getElementById('progressFill');
+    const progressLabel = document.getElementById('progressLabel');
+
+    // Handle transparent toggle
+    bgTransparent.addEventListener('change', () => {
+      const isTransparent = bgTransparent.checked;
+      colorPickerWrap.classList.toggle('disabled', isTransparent);
+
+      const jpegOption = imgFormat.querySelector('option[value="image/jpeg"]');
+      if (isTransparent) {
+        imgFormat.value = 'image/png';
+        if (jpegOption) jpegOption.disabled = true;
+      } else {
+        if (jpegOption) jpegOption.disabled = false;
+      }
+    });
+
+    // Keep hex text and color picker in sync
+    bgColorPicker.addEventListener('input', (e) => {
+      bgColorText.value = e.target.value.toUpperCase();
+    });
+    bgColorText.addEventListener('input', (e) => {
+      if (/^#[0-9A-F]{6}$/i.test(e.target.value)) {
+        bgColorPicker.value = e.target.value;
+      }
+    });
+
+    paddingPercent.addEventListener('input', (e) => {
+      paddingLabel.textContent = `${e.target.value}%`;
+    });
+
+    aspectRatio.addEventListener('change', () => {
+      const isOriginal = aspectRatio.value === 'original';
+      bgGroup.style.display = isOriginal ? 'none' : 'block';
+      marginGroup.style.display = isOriginal ? 'none' : 'block';
+    });
+
+    dropzone.addEventListener('click', () => fileInput.click());
+    dropzone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropzone.classList.add('dragover');
+    });
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+    dropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('dragover');
+      if (e.dataTransfer.files.length > 0) processFile(e.dataTransfer.files[0]);
+    });
+    fileInput.addEventListener('change', (e) => {
+      if (e.target.files.length > 0) processFile(e.target.files[0]);
+    });
+
+    pageMode.addEventListener('change', () => {
+      pageRange.classList.toggle('hidden', pageMode.value !== 'range');
+    });
+
+    startOverBtn.addEventListener('click', resetAll);
+
+    function parsePageRange(rangeStr, totalPages) {
+      const pages = new Set();
+      const parts = rangeStr.split(',');
+      for (const part of parts) {
+        const trimmed = part.trim();
+        if (trimmed.includes('-')) {
+          const [start, end] = trimmed.split('-').map(Number);
+          if (!isNaN(start) && !isNaN(end)) {
+            for (let i = Math.max(1, start); i <= Math.min(totalPages, end); i++) pages.add(i);
+          }
+        } else {
+          const num = Number(trimmed);
+          if (!isNaN(num) && num >= 1 && num <= totalPages) pages.add(num);
+        }
+      }
+      return Array.from(pages).sort((a, b) => a - b);
+    }
+
+    async function processFile(file) {
+      if (file.type !== 'application/pdf') {
+        alert('Please select a valid PDF file.');
+        return;
+      }
+
+      currentFileName = file.name;
+      const buffer = await file.arrayBuffer();
+
+      try {
+        currentPdfDoc = await pdfjsLib.getDocument({ data: buffer }).promise;
+      } catch (err) {
+        alert('Error parsing PDF: ' + err.message);
+        return;
+      }
+
+      uploadView.classList.add('hidden');
+      resultsView.classList.remove('hidden');
+      thumbnailsGrid.innerHTML = '';
+      generatedThumbnails = [];
+
+      displayFileName.textContent = currentFileName;
+      displayFileInfo.textContent = `${currentPdfDoc.numPages} Page${currentPdfDoc.numPages > 1 ? 's' : ''}`;
+
+      await renderThumbnails();
+    }
+
+    async function renderThumbnails() {
+      const totalPages = currentPdfDoc.numPages;
+      let targetPages = [];
+
+      if (pageMode.value === 'first') {
+        targetPages = [1];
+      } else if (pageMode.value === 'range' && pageRange.value.trim()) {
+        targetPages = parsePageRange(pageRange.value, totalPages);
+      } else {
+        targetPages = Array.from({ length: totalPages }, (_, i) => i + 1);
+      }
+
+      if (targetPages.length === 0) {
+        alert('No valid pages found.');
+        resetAll();
+        return;
+      }
+
+      progressBox.classList.remove('hidden');
+      downloadAllBtn.disabled = true;
+
+      const targetW = parseInt(imgWidth.value, 10);
+      const ratio = aspectRatio.value;
+      const isTransparent = bgTransparent.checked && ratio !== 'original';
+      const bgHex = bgColorText.value.trim() || '#FBFCFD';
+      const padRatio = parseInt(paddingPercent.value, 10) / 100;
+      const mime = isTransparent ? 'image/png' : imgFormat.value;
+      const ext = mime === 'image/jpeg' ? 'jpg' : (mime === 'image/webp' ? 'webp' : 'png');
+      const baseCleanName = currentFileName.replace(/\.[^/.]+$/, "");
+
+      for (let i = 0; i < targetPages.length; i++) {
+        const pageNum = targetPages[i];
+
+        const percent = Math.round(((i + 1) / targetPages.length) * 100);
+        progressFill.style.width = percent + '%';
+        progressLabel.textContent = `Rendering page ${pageNum} (${i + 1} of ${targetPages.length})...`;
+
+        const page = await currentPdfDoc.getPage(pageNum);
+        const unscaledViewport = page.getViewport({ scale: 1 });
+        const pdfAspect = unscaledViewport.width / unscaledViewport.height;
+
+        let finalCanvas = document.createElement('canvas');
+        let ctx = finalCanvas.getContext('2d');
+
+        if (ratio === 'original') {
+          const scale = targetW / unscaledViewport.width;
+          const viewport = page.getViewport({ scale: scale });
+          finalCanvas.width = viewport.width;
+          finalCanvas.height = viewport.height;
+
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, finalCanvas.width, finalCanvas.height);
+          await page.render({ canvasContext: ctx, viewport }).promise;
+        } else {
+          // Calculate Canvas Dimensions
+          let targetH;
+          if (ratio === '16:9') targetH = Math.round(targetW * (9 / 16));
+          else if (ratio === '4:3') targetH = Math.round(targetW * (3 / 4));
+          else targetH = targetW; // 1:1
+
+          finalCanvas.width = targetW;
+          finalCanvas.height = targetH;
+
+          // 1. Fill Background (Skip if transparent)
+          if (!isTransparent) {
+            ctx.fillStyle = bgHex;
+            ctx.fillRect(0, 0, targetW, targetH);
+          }
+
+          // 2. Compute Sheet Size (0% margin makes sheet fill 100% of vertical height)
+          const padY = Math.round(targetH * padRatio);
+          const maxSheetH = targetH - (padY * 2);
+          const maxSheetW = targetW;
+
+          let sheetH = maxSheetH;
+          let sheetW = sheetH * pdfAspect;
+
+          if (sheetW > maxSheetW) {
+            sheetW = maxSheetW;
+            sheetH = sheetW / pdfAspect;
+          }
+
+          const sheetX = Math.round((targetW - sheetW) / 2);
+          const sheetY = padY;
+
+          // 3. Render High-Resolution Offscreen Canvas
+          const renderScale = sheetW / unscaledViewport.width;
+          const pdfViewport = page.getViewport({ scale: renderScale });
+
+          const offCanvas = document.createElement('canvas');
+          offCanvas.width = Math.round(sheetW);
+          offCanvas.height = Math.round(sheetH);
+          const offCtx = offCanvas.getContext('2d');
+
+          offCtx.fillStyle = '#ffffff';
+          offCtx.fillRect(0, 0, offCanvas.width, offCanvas.height);
+          await page.render({ canvasContext: offCtx, viewport: pdfViewport }).promise;
+
+          // 4. Soft Natural Drop Shadow (Smooth alpha shadow onto transparent canvas)
+          ctx.save();
+          ctx.shadowColor = 'rgba(15, 23, 42, 0.10)';
+          ctx.shadowBlur = Math.max(10, Math.round(targetW * 0.015));
+          ctx.shadowOffsetY = padRatio === 0 ? 0 : Math.max(4, Math.round(targetH * 0.012));
+          ctx.shadowOffsetX = 0;
+
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(sheetX, sheetY, sheetW, sheetH);
+          ctx.restore();
+
+          // 5. Draw the PDF content flush
+          ctx.drawImage(offCanvas, sheetX, sheetY, sheetW, sheetH);
+
+          // 6. Crisp border around the paper edge
+          ctx.strokeStyle = 'rgba(0, 0, 0, 0.06)';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(sheetX, sheetY, sheetW, sheetH);
+        }
+
+        const dataUrl = finalCanvas.toDataURL(mime, 0.95);
+        const filename = `${baseCleanName}_page_${pageNum}.${ext}`;
+
+        generatedThumbnails.push({ pageNum, filename, dataUrl });
+
+        const thumbDiv = document.createElement('div');
+        thumbDiv.className = `thumb-card ${isTransparent ? 'is-transparent' : ''}`;
+        thumbDiv.innerHTML = `
+          <img alt="Page ${pageNum}" src="${dataUrl}" />
+          <div class="thumb-footer">
+            <span>Page ${pageNum}</span>
+            <a href="${dataUrl}" download="${filename}" class="thumb-download-btn">Download</a>
+          </div>
+        `;
+        thumbnailsGrid.appendChild(thumbDiv);
+      }
+
+      progressBox.classList.add('hidden');
+      downloadAllBtn.disabled = false;
+    }
+
+    downloadAllBtn.addEventListener('click', async () => {
+      if (generatedThumbnails.length === 0) return;
+
+      downloadAllBtn.disabled = true;
+      const originalText = downloadAllBtn.innerHTML;
+      downloadAllBtn.textContent = 'Compressing into ZIP...';
+
+      const zip = new JSZip();
+      for (const item of generatedThumbnails) {
+        const base64Data = item.dataUrl.split(',')[1];
+        zip.file(item.filename, base64Data, { base64: true });
+      }
+
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const cleanName = currentFileName.replace(/\.[^/.]+$/, "");
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(zipBlob);
+      link.download = `${cleanName}_thumbnails.zip`;
+      link.click();
+
+      downloadAllBtn.innerHTML = originalText;
+      downloadAllBtn.disabled = false;
+    });
+
+    function resetAll() {
+      currentPdfDoc = null;
+      currentFileName = '';
+      generatedThumbnails = [];
+      fileInput.value = '';
+      thumbnailsGrid.innerHTML = '';
+      resultsView.classList.add('hidden');
+      uploadView.classList.remove('hidden');
+    }
+  </script>
+</body>
+
+</html>
